@@ -18,6 +18,7 @@ Vagrant.configure("2") do |config|
     end
     master.vm.network "forwarded_port", guest: 80, host: 8080
     master.vm.network "forwarded_port", guest: 6443, host: 6443
+    master.vm.provision "shell", inline: $init_master
   end
 
   %w{worker1 worker2}.each_with_index do |name, i|
@@ -51,7 +52,9 @@ apt-get -qq update
 apt-get -qq install -y docker.io apt-transport-https curl
 systemctl daemon-reload
 systemctl restart restart docker.service
+systemctl enable docker.service
 sudo usermod -aG docker vagrant
+sudo sysctl net.bridge.bridge-nf-call-iptables=1
 apt-key adv --fetch-keys https://packages.cloud.google.com/apt/doc/apt-key.gpg
 cat <<EOF >/etc/apt/sources.list.d/kubernetes.list
 deb http://apt.kubernetes.io/ kubernetes-xenial main
@@ -67,3 +70,14 @@ SCRIPT
 $install_multicast = <<-SHELL
 apt-get -qq install -y avahi-daemon libnss-mdns
 SHELL
+
+#kubeadm token create --print-join-command on master to get the join command for slaves
+$init_master = <<-SHELL
+kubeadm init --pod-network-cidr=10.244.0.0/16
+mkdir -p $HOME/.kube
+sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+sudo chown $(id -u):$(id -g) $HOME/.kube/config
+kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/2140ac876ef134e0ed5af15c65e414cf26827915/Documentation/kube-flannel.yml
+SHELL
+
+
